@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Archive review</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+:root{--ink:#14080f;--cream:#fdedb5;--gold:#f2d21b;--red:#ff5a5f;--pink:#f7c9d4;--yellow:#fbeaa0;--lilac:#d9cdf0;--sage:#c9dcbf}
+*{box-sizing:border-box}
+body{margin:0;background:#221b1e;color:var(--cream);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 60px}
+h1{font:600 22px/1.2 Georgia,serif;margin:0 0 4px}
+.sub{opacity:.7;margin:0 0 20px}
+.box{background:var(--ink);border-radius:8px;padding:18px;margin:0 0 18px}
+label{display:block;font-size:12px;opacity:.8;margin:8px 0 4px}
+input{width:100%;padding:10px;border-radius:6px;border:1px solid #5a4a50;background:#2c2327;color:var(--cream);font:inherit}
+button{font:600 12px system-ui,sans-serif;letter-spacing:.5px;padding:9px 14px;border-radius:6px;border:0;cursor:pointer}
+.primary{background:var(--gold);color:var(--ink);margin-top:12px}
+.ok{background:#7bc47f;color:#10220f}.del{background:transparent;color:var(--red);border:1px solid var(--red)}
+.ghost{background:transparent;color:var(--cream);border:1px solid #5a4a50}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.tabs{display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap;align-items:center}
+.tab[aria-pressed=true]{background:var(--cream);color:var(--ink)}
+.badge{display:inline-block;min-width:22px;padding:2px 7px;border-radius:12px;background:var(--red);color:#fff;font-weight:700;margin-left:6px;text-align:center}
+.badge.zero{background:#4a3c42}
+.list{display:grid;gap:10px}
+.row{display:flex;gap:12px;align-items:flex-start;background:#2c2327;border-radius:8px;padding:12px}
+.sw{flex:0 0 14px;height:14px;border-radius:3px;margin-top:4px}
+.txt{flex:1;white-space:pre-wrap;word-break:break-word}
+.meta{font-size:11px;opacity:.6;margin-top:4px}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.flag{color:var(--red);font-size:11px;font-weight:700;letter-spacing:.5px}
+.empty{opacity:.6;font-style:italic;padding:10px 0}
+#msg{color:var(--red);min-height:1.5em}
+[hidden]{display:none!important}
+</style></head><body><main>
+<h1>Archive review</h1>
+<p class="sub">The Inherited Rooms &middot; Room III. Notes caught by the word filter wait here until you approve or delete them.</p>
+
+<div class="box" id="setup" hidden>
+ <b>Not connected yet.</b> Paste your Supabase project URL and public key into the top of <code>admin.html</code> and <code>index.html</code> (see SETUP.md).
+</div>
+
+<div class="box" id="login" hidden>
+ <label for="em">Email</label><input id="em" type="email" autocomplete="username">
+ <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+ <button class="primary" id="go" type="button">Log in</button>
+ <div id="msg" role="alert"></div>
+</div>
+
+<div id="app" hidden>
+ <div class="tabs">
+  <button class="ghost tab" data-v="pending" aria-pressed="true" type="button">Waiting for review <span class="badge" id="nPend">0</span></button>
+  <button class="ghost tab" data-v="wall" aria-pressed="false" type="button">On the wall <span class="badge zero" id="nWall">0</span></button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="refresh" type="button">Refresh</button>
+  <button class="ghost" id="out" type="button">Log out</button>
+ </div>
+ <div class="list" id="list" aria-live="polite"></div>
+</div>
+</main>
+<script>
+/* ===== paste the same two values as in index.html ===== */
+var SUPABASE_URL='';
+var SUPABASE_KEY='';
+/* ======================================================= */
+(function(){
+var $=function(id){return document.getElementById(id)};
+if(!SUPABASE_URL||!SUPABASE_KEY||!window.supabase){$('setup').hidden=false;return}
+var sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY),view='pending',rows=[];
+var COL={pink:'var(--pink)',yellow:'var(--yellow)',lilac:'var(--lilac)',sage:'var(--sage)'};
+function show(session){$('login').hidden=!!session;$('app').hidden=!session;if(session)load()}
+sb.auth.getSession().then(function(r){show(r.data.session)});
+$('go').onclick=function(){$('msg').textContent='';sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value}).then(function(r){if(r.error){$('msg').textContent=r.error.message;return}show(r.data.session)})};
+$('pw').addEventListener('keydown',function(e){if(e.key==='Enter')$('go').click()});
+$('out').onclick=function(){sb.auth.signOut().then(function(){show(null)})};
+$('refresh').onclick=load;
+document.querySelectorAll('.tab').forEach(function(b){b.onclick=function(){view=b.dataset.v;document.querySelectorAll('.tab').forEach(function(x){x.setAttribute('aria-pressed',x===b)});render()}});
+function load(){sb.from('notes').select('*').order('created_at',{ascending:false}).limit(2000).then(function(r){
+ if(r.error){$('list').innerHTML='';var p=document.createElement('p');p.className='empty';p.textContent='Could not load notes: '+r.error.message;$('list').appendChild(p);return}
+ rows=r.data||[];render()})}
+function pending(){return rows.filter(function(n){return n.flagged&&!n.approved})}
+function onWall(){return rows.filter(function(n){return!n.flagged||n.approved})}
+function render(){var p=pending(),w=onWall();
+ $('nPend').textContent=p.length;$('nPend').className='badge'+(p.length?'':' zero');$('nWall').textContent=w.length;
+ document.title=(p.length?'('+p.length+') ':'')+'Archive review';
+ var list=$('list');list.innerHTML='';var data=view==='pending'?p:w;
+ if(!data.length){var e=document.createElement('p');e.className='empty';e.textContent=view==='pending'?'Nothing waiting. All clear.':'No notes on the wall yet.';list.appendChild(e);return}
+ data.forEach(function(n){var row=document.createElement('div');row.className='row';
+  var sw=document.createElement('span');sw.className='sw';sw.style.background=COL[n.color]||COL.yellow;row.appendChild(sw);
+  var mid=document.createElement('div');mid.className='txt';mid.textContent=n.body;
+  var meta=document.createElement('div');meta.className='meta';meta.textContent=new Date(n.created_at).toLocaleString()+' · '+(n.lang||'en')+(n.flagged&&n.approved?' · approved after review':'');
+  if(n.flagged&&!n.approved){var f=document.createElement('div');f.className='flag';f.textContent='HELD BY WORD FILTER';mid.prepend(f)}
+  mid.appendChild(meta);row.appendChild(mid);
+  var acts=document.createElement('div');acts.className='acts';
+  if(n.flagged&&!n.approved){var ok=document.createElement('button');ok.className='ok';ok.type='button';ok.textContent='Approve';ok.onclick=function(){act(sb.from('notes').update({approved:true}).eq('id',n.id))};acts.appendChild(ok)}
+  var del=document.createElement('button');del.className='del';del.type='button';del.textContent='Delete';
+  del.onclick=function(){if(del.dataset.sure){act(sb.from('notes').delete().eq('id',n.id))}else{del.dataset.sure=1;del.textContent='Sure? Delete'}};
+  acts.appendChild(del);row.appendChild(acts);list.appendChild(row)})}
+function act(q){q.then(function(r){if(r.error)alert(r.error.message);load()})}
+setInterval(function(){if(!$('app').hidden)load()},60000);
+})();
+</script></body></html>
